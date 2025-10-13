@@ -244,6 +244,80 @@ install_vscode_with_vim() {
   fi
 }
 
+# Installs Python and LaTeX extensions for VS Code
+install_vscode_extensions() {
+  info "Installing VS Code extensions: Python Extension Pack and LaTeX Workshop..."
+
+  # Determine which code binary to use (vscode, code, or codium)
+  local code_bin=""
+  for bin in code visual-studio-code codium vscodium; do
+    if command -v "$bin" &>/dev/null; then
+      code_bin="$bin"
+      break
+    fi
+  done
+
+  if [[ -z "$code_bin" ]]; then
+    err "VS Code not found. Please install it first with install_vscode."
+    return 1
+  fi
+
+  # Install extensions
+  "$code_bin" --install-extension donjayamanne.python-extension-pack
+  "$code_bin" --install-extension james-yu.latex-workshop
+
+  info "VS Code extensions installed successfully."
+}
+
+# Creates or updates VS Code settings.json with Vim key handling config
+setup_vscode_settings() {
+  info "Configuring VS Code user settings..."
+
+  local settings_dir="$HOME/.config/Code/User"
+  local settings_file="$settings_dir/settings.json"
+
+  mkdir -p "$settings_dir"
+
+  # Desired JSON content
+  local desired_content='{
+    "vim.handleKeys": {
+        "<C-c>": false,
+        "<C-v>": false,
+        "<C-a>": false,
+        "<C-x>": false,
+        "<C-p>": false,
+        "<C-z>": false
+    },
+    "keyboard.dispatch": "keyCode"
+}'
+
+  # If file doesn't exist, create it
+  if [[ ! -f "$settings_file" ]]; then
+    info "Creating new VS Code settings.json"
+    echo "$desired_content" > "$settings_file"
+    return 0
+  fi
+
+  # If file exists but missing our keys, merge them in
+  if ! grep -q '"vim.handleKeys"' "$settings_file"; then
+    warn "VS Code settings.json exists but missing vim.handleKeys; merging..."
+    tmp_file="$(mktemp)"
+    jq '. + {
+      "vim.handleKeys": {
+        "<C-c>": false,
+        "<C-v>": false,
+        "<C-a>": false,
+        "<C-x>": false,
+        "<C-p>": false,
+        "<C-z>": false
+      },
+      "keyboard.dispatch": "keyCode"
+    }' "$settings_file" > "$tmp_file" && mv "$tmp_file" "$settings_file"
+  else
+    info "VS Code settings.json already contains vim.handleKeys — no changes made."
+  fi
+}
+
 # 9) Install uv (Rust-based Python package manager)
 install_uv() {
   info "Installing uv (Python package manager)."
@@ -288,6 +362,27 @@ EOF
   fi
 }
 
+# Installs full TeX Live distribution via yay (Arch-based systems)
+install_texlive() {
+  info "Installing full TeX Live distribution..."
+  if ! command -v yay &>/dev/null; then
+    err "yay is not installed. Please install yay first."
+    return 1
+  fi
+
+  # Install the full TeX Live package
+  yay -S --needed --noconfirm texlive-full
+
+  # Confirm binaries are accessible
+  if command -v pdflatex &>/dev/null && command -v latexmk &>/dev/null; then
+    info "TeX Live installation complete and binaries are in PATH."
+  else
+    warn "TeX Live installed but binaries not found in PATH."
+    warn "You may need to add the TeX Live bin directory to PATH:"
+    echo "  export PATH=\"/usr/local/texlive/$(date +%Y)/bin/x86_64-linux:\$PATH\""
+  fi
+}
+
 main() {
   install_packages
   install_oh_my_zsh
@@ -297,7 +392,10 @@ main() {
   make_default_shell
   setup_chromium_workspace_fix
   install_vscode_with_vim
+  install_vscode_extensions
+  setup_vscode_settings
   install_uv
+  install_texlive
   info "All done."
 }
 
