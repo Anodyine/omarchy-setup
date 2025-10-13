@@ -30,22 +30,27 @@ PKG="$(echo -n "$PKG" | tr -d '[:space:]')"
 [[ -n "$PKG" ]] || { err "Package name empty after normalization."; exit 1; }
 
 # Add package if not present (ignore comments and blanks)
-if grep -vxqF "$PKG" <(sed -e 's/#.*$//' -e '/^\s*$/d' "$LIST_FILE"); then
+if ! grep -xqF "$PKG" <(sed -e 's/#.*$//' -e '/^\s*$/d' "$LIST_FILE"); then
   info "Adding '$PKG' to $LIST_FILE"
   echo "$PKG" >> "$LIST_FILE"
 else
   info "'$PKG' already present in $LIST_FILE"
 fi
 
-# Optional: keep list tidy and unique (preserve comments by rebuilding non-comment block)
+# Order-preserving dedupe of package lines, keep comments/blanks as-is
 tmp="$(mktemp)"
-{
-  # Keep existing comments and their positions
-  grep -E '^\s*#|^\s*$' "$LIST_FILE"
-  # Re-add unique package lines sorted
-  sed -e 's/#.*$//' -e '/^\s*$/d' "$LIST_FILE" | sort -u
-} | awk 'NF{print}' > "$tmp"
-mv "$tmp" "$LIST_FILE"
+awk '
+  BEGIN{ OFS=RS="" }
+  /^\s*#/ || /^\s*$/ { print; next }
+  {
+    gsub(/#.*/,""); if ($0 ~ /^[[:space:]]*$/) next
+    if (!seen[$0]++) order[++n]=$0
+  }
+  END {
+    for (i=1;i<=n;i++) print order[i] "\n"
+  }
+' "$LIST_FILE" > "$tmp" && mv "$tmp" "$LIST_FILE"
+
 
 # Commit and push list change
 info "Committing and pushing packages.list update..."
