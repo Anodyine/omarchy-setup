@@ -362,24 +362,28 @@ EOF
   fi
 }
 
-# Installs full TeX Live distribution via yay (Arch-based systems)
+# Installs TeX Live from official Arch repositories (recommended)
 install_texlive() {
-  info "Installing full TeX Live distribution..."
-  if ! command -v yay &>/dev/null; then
-    err "yay is not installed. Please install yay first."
-    return 1
+  info "Installing TeX Live from official Arch repositories..."
+
+  # Check for yay or fall back to pacman
+  local pkgmgr="pacman"
+  if command -v yay &>/dev/null; then
+    pkgmgr="yay"
   fi
 
-  # Install the full TeX Live package
-  yay -S --needed --noconfirm texlive-full
+  # Install TeX Live split packages from official repos
+  sudo "$pkgmgr" -Syu --needed --noconfirm \
+    texlive-basic texlive-latex texlive-latexrecommended texlive-latexextra \
+    texlive-bibtexextra texlive-fontsrecommended texlive-pictures \
+    texlive-bin texlive-binextra dvisvgm
 
-  # Confirm binaries are accessible
+  # Verify binaries
   if command -v pdflatex &>/dev/null && command -v latexmk &>/dev/null; then
     info "TeX Live installation complete and binaries are in PATH."
   else
-    warn "TeX Live installed but binaries not found in PATH."
-    warn "You may need to add the TeX Live bin directory to PATH:"
-    echo "  export PATH=\"/usr/local/texlive/$(date +%Y)/bin/x86_64-linux:\$PATH\""
+    warn "TeX Live installed, but binaries not found in PATH."
+    warn "You may need to log out and back in, or add /usr/bin explicitly to PATH."
   fi
 }
 
