@@ -383,6 +383,31 @@ install_texlive() {
   fi
 }
 
+install_packages_from_list() {
+  local repo_dir="$HOME/repos/omarchy-setup"
+  local list_file="$repo_dir/packages.list"
+
+  info "Installing packages from $list_file"
+
+  if [[ ! -f "$list_file" ]]; then
+    warn "No packages.list found at $list_file"
+    return 0
+  fi
+
+  # Read list, ignore blanks and comments
+  mapfile -t all_pkgs < <(sed -e 's/#.*$//' -e '/^\s*$/d' "$list_file")
+
+  if [[ ${#all_pkgs[@]} -eq 0 ]]; then
+    info "No packages listed. Skipping."
+    return 0
+  fi
+
+  if [[ ${#all_pkgs[@]} -gt 0 ]]; then
+    info "Installing packages: ${all_pkgs[*]}"
+    yay -S --needed --noconfirm "${all_pkgs[@]}"
+  fi
+}
+
 main() {
   install_packages
   install_oh_my_zsh
@@ -395,6 +420,7 @@ main() {
   install_vscode_extensions
   setup_vscode_settings
   install_uv
+  install_packages_from_list
   install_texlive
   info "All done."
 }
