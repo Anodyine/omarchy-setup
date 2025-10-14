@@ -1,0 +1,12 @@
+{
+    "vim.handleKeys": {
+        "<C-c>": false,
+        "<C-v>": false,
+        "<C-a>": false,
+        "<C-x>": false,
+        "<C-p>": false,
+        "<C-f>": false,
+        "<C-z>": false
+    },
+    "keyboard.dispatch": "keyCode"
+}

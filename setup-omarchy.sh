@@ -286,6 +286,7 @@ setup_vscode_settings() {
         "<C-a>": false,
         "<C-x>": false,
         "<C-p>": false,
+        "<C-f>": false,
         "<C-z>": false
     },
     "keyboard.dispatch": "keyCode"
@@ -309,6 +310,7 @@ setup_vscode_settings() {
         "<C-a>": false,
         "<C-x>": false,
         "<C-p>": false,
+        "<C-f>": false,
         "<C-z>": false
       },
       "keyboard.dispatch": "keyCode"
