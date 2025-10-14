@@ -37,20 +37,24 @@ else
   info "'$PKG' already present in $LIST_FILE"
 fi
 
-# Order-preserving dedupe of package lines, keep comments/blanks as-is
+# Clean up: remove extra blank lines and dedupe package entries
 tmp="$(mktemp)"
 awk '
-  BEGIN{ OFS=RS="" }
-  /^\s*#/ || /^\s*$/ { print; next }
-  {
-    gsub(/#.*/,""); if ($0 ~ /^[[:space:]]*$/) next
-    if (!seen[$0]++) order[++n]=$0
+  /^\s*#/ { print; next }            # keep comments
+  NF {                                # skip empty lines
+    pkg=$0
+    gsub(/#.*/,"",pkg)
+    gsub(/^[[:space:]]+|[[:space:]]+$/,"",pkg)
+    if (pkg != "" && !seen[pkg]++) order[++n]=pkg
   }
   END {
-    for (i=1;i<=n;i++) print order[i] "\n"
+    for (i=1;i<=n;i++) print order[i]
   }
-' "$LIST_FILE" > "$tmp" && mv "$tmp" "$LIST_FILE"
+' "$LIST_FILE" > "$tmp"
 
+# Strip trailing blank lines
+sed -i '/^$/d' "$tmp"
+mv "$tmp" "$LIST_FILE"
 
 # Commit and push list change
 info "Committing and pushing packages.list update..."

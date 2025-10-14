@@ -1,10 +1,20 @@
+# posix compatibile shell
 zsh
+
+#modern python venv manager
 uv
+
+# IDE
 visual-studio-code-bin
+
+# kde partition manager
 partitionmanager
+
+# andoid drivers
 android-tools
 libmtp
 gvfs-mtp
 android-udev
-archnews
+
+# arch news provider. Check before upgrading!
 informant
