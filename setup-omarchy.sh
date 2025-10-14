@@ -330,6 +330,12 @@ main() {
   install_vscode_extensions_from_list
   setup_vscode_settings
   install_packages_from_list "$SCRIPT_DIR/texlive-packages.list"
+
+  # Install informant last so its hook doesn’t block anything else
+  # If you run this, you will need to read the latest news before
+  # updating or installing packages. That way, you won't miss required manual
+  # interventions.
+  yay -S --needed --noconfirm informant
   info "All done."
 }
 

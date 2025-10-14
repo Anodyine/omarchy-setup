@@ -15,6 +15,3 @@ android-tools
 libmtp
 gvfs-mtp
 android-udev
-
-# arch news provider. Check before upgrading!
-informant
