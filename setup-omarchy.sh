@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Installs zsh + Oh My Zsh + autosuggestions + syntax highlighting,
-# sets theme to dpoggi, enables plugins in .zshrc, sets default shell to zsh,
-# and configures Chromium to avoid crashes when moving between desktops.
+# Installs preferred Omarchy configuration
+# Includes fixes for Nvidia, package installs, and application configuration
 
 set -euo pipefail
 
@@ -9,28 +8,8 @@ info() { printf "\033[1;32m[INFO]\033[0m %s\n" "$*"; }
 warn() { printf "\033[1;33m[WARN]\033[0m %s\n" "$*"; }
 err()  { printf "\033[1;31m[ERR ]\033[0m %s\n" "$*" >&2; }
 
-# 1) Install prerequisites and zsh
-install_packages() {
-  local pkgs=("zsh" "git" "curl")
-  if command -v pacman >/dev/null 2>&1; then
-    info "Detected Arch/Omarchy. Installing packages with pacman."
-    sudo pacman -Sy --needed --noconfirm "${pkgs[@]}"
-  elif command -v apt-get >/dev/null 2>&1; then
-    info "Detected Debian/Ubuntu. Installing packages with apt."
-    sudo apt-get update -y
-    sudo apt-get install -y "${pkgs[@]}"
-  elif command -v dnf >/dev/null 2>&1; then
-    info "Detected Fedora. Installing packages with dnf."
-    sudo dnf install -y "${pkgs[@]}"
-  elif command -v zypper >/dev/null 2>&1; then
-    info "Detected openSUSE. Installing packages with zypper."
-    sudo zypper install -y "${pkgs[@]}"
-  else
-    warn "Could not detect a known package manager. Ensure zsh, git, and curl are installed."
-  fi
-}
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
-# 2) Install Oh My Zsh (non-interactive)
 install_oh_my_zsh() {
   if [ -d "${HOME}/.oh-my-zsh" ]; then
     info "Oh My Zsh already installed at ~/.oh-my-zsh"
@@ -43,38 +22,44 @@ install_oh_my_zsh() {
   sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
 }
 
-# 3) Ensure a base .zshrc exists and back it up
 ensure_zshrc() {
+  local sentinel="${HOME}/.zshrc.omz_backed_up"
   if [ -f "${HOME}/.zshrc" ]; then
-    cp -a "${HOME}/.zshrc" "${HOME}/.zshrc.pre-omz-$(date +%Y%m%d%H%M%S).bak"
-    info "Backed up existing .zshrc"
+    if [ ! -f "$sentinel" ]; then
+      cp -a "${HOME}/.zshrc" "${HOME}/.zshrc.pre-omz-$(date +%Y%m%d%H%M%S).bak"
+      : > "$sentinel"
+      info "Backed up existing .zshrc"
+    else
+      info ".zshrc already backed up previously. Skipping backup."
+    fi
   else
     cp "${HOME}/.oh-my-zsh/templates/zshrc.zsh-template" "${HOME}/.zshrc"
     info "Created new .zshrc from template"
   fi
 }
 
-# 4) Install plugins into $ZSH_CUSTOM
 install_plugins() {
   local ZSH_CUSTOM="${ZSH_CUSTOM:-${HOME}/.oh-my-zsh/custom}"
   mkdir -p "${ZSH_CUSTOM}/plugins"
 
-  if [ ! -d "${ZSH_CUSTOM}/plugins/zsh-autosuggestions" ]; then
+  if [ ! -d "${ZSH_CUSTOM}/plugins/zsh-autosuggestions/.git" ]; then
     info "Installing zsh-autosuggestions plugin."
     git clone https://github.com/zsh-users/zsh-autosuggestions "${ZSH_CUSTOM}/plugins/zsh-autosuggestions"
   else
-    info "zsh-autosuggestions already present."
+    info "Updating zsh-autosuggestions plugin."
+    git -C "${ZSH_CUSTOM}/plugins/zsh-autosuggestions" pull --ff-only || warn "autosuggestions update failed"
   fi
 
-  if [ ! -d "${ZSH_CUSTOM}/plugins/zsh-syntax-highlighting" ]; then
+  if [ ! -d "${ZSH_CUSTOM}/plugins/zsh-syntax-highlighting/.git" ]; then
     info "Installing zsh-syntax-highlighting plugin."
     git clone https://github.com/zsh-users/zsh-syntax-highlighting "${ZSH_CUSTOM}/plugins/zsh-syntax-highlighting"
   else
-    info "zsh-syntax-highlighting already present."
+    info "Updating zsh-syntax-highlighting plugin."
+    git -C "${ZSH_CUSTOM}/plugins/zsh-syntax-highlighting" pull --ff-only || warn "syntax-highlighting update failed"
   fi
 }
 
-# 5) Edit .zshrc: theme and plugins
+
 configure_zshrc() {
   local zshrc="${HOME}/.zshrc"
 
@@ -112,7 +97,6 @@ EOF
   fi
 }
 
-# 6) Change default shell to zsh
 make_default_shell() {
   local zsh_path
   zsh_path="$(command -v zsh || true)"
@@ -136,7 +120,6 @@ make_default_shell() {
   fi
 }
 
-# 7) Configure Chromium to avoid workspace-move crashes
 setup_chromium_workspace_fix() {
   if ! command -v chromium >/dev/null 2>&1; then
     warn "chromium not found on PATH. Skipping Chromium setup."
@@ -194,240 +177,159 @@ EOF
   fi
 
   # f) Clean stale singletons and GPU caches once
-  info "Cleaning Chromium caches and singletons."
-  killall -9 chromium chrome 2>/dev/null || true
-  rm -f "${HOME}/.config/chromium/Singleton"* 2>/dev/null || true
-  rm -rf "${HOME}/.config/chromium/GPUCache" "${HOME}/.config/chromium/ShaderCache" 2>/dev/null || true
+#   info "Cleaning Chromium caches and singletons."
+#   killall -9 chromium chrome 2>/dev/null || true
+#   rm -f "${HOME}/.config/chromium/Singleton"* 2>/dev/null || true
+#   rm -rf "${HOME}/.config/chromium/GPUCache" "${HOME}/.config/chromium/ShaderCache" 2>/dev/null || true
 
   info "Chromium configured. Log out and back in once so GUI PATH takes effect."
 }
 
-# 8) Install Visual Studio Code (Microsoft build) + Vim keybindings
-install_vscode_with_vim() {
-  if ! command -v pacman >/dev/null 2>&1; then
-    warn "Not an Arch/Omarchy system. Skipping VS Code install."
-    return 0
-  fi
-
-  # Ensure yay exists (install yay-bin from AUR if needed)
-  if ! command -v yay >/dev/null 2>&1; then
-    info "yay not found. Installing yay-bin from AUR."
-    sudo pacman -Sy --needed --noconfirm base-devel git || {
-      err "Failed to install base-devel/git needed for AUR builds."
-      return 1
-    }
-    local _tmp
-    _tmp="$(mktemp -d)"
-    pushd "$_tmp" >/dev/null
-    git clone https://aur.archlinux.org/yay-bin.git
-    pushd yay-bin >/dev/null
-    makepkg -si --noconfirm
-    popd >/dev/null
-    popd >/dev/null
-    rm -rf "$_tmp"
-  fi
-
-  info "Installing Visual Studio Code (visual-studio-code-bin) with yay."
-  yay -S --noconfirm --needed visual-studio-code-bin || {
-    err "Failed to install visual-studio-code-bin."
-    return 1
-  }
-
-  # Install Vim keybindings extension
-  if command -v code >/dev/null 2>&1; then
-    info "Installing Vim keybindings extension for VS Code."
-    # Official extension ID:
-    #   Publisher: vscodevim, Extension name: vim  ->  "vscodevim.vim"
-    code --install-extension vscodevim.vim --force || warn "Could not install vscodevim.vim extension."
-  else
-    warn "'code' CLI not found on PATH after install. You may need to re-login."
-  fi
-}
-
-# Installs Python and LaTeX extensions for VS Code
-install_vscode_extensions() {
-  info "Installing VS Code extensions: Python Extension Pack and LaTeX Workshop..."
-
-  # Determine which code binary to use (vscode, code, or codium)
-  local code_bin=""
-  for bin in code visual-studio-code codium vscodium; do
-    if command -v "$bin" &>/dev/null; then
-      code_bin="$bin"
-      break
-    fi
-  done
-
-  if [[ -z "$code_bin" ]]; then
-    err "VS Code not found. Please install it first with install_vscode."
-    return 1
-  fi
-
-  # Install extensions
-  "$code_bin" --install-extension donjayamanne.python-extension-pack
-  "$code_bin" --install-extension james-yu.latex-workshop
-
-  info "VS Code extensions installed successfully."
-}
-
-# Creates or updates VS Code settings.json with Vim key handling config
-setup_vscode_settings() {
-  info "Configuring VS Code user settings..."
-
-  local settings_dir="$HOME/.config/Code/User"
-  local settings_file="$settings_dir/settings.json"
-
-  mkdir -p "$settings_dir"
-
-  # Desired JSON content
-  local desired_content='{
-    "vim.handleKeys": {
-        "<C-c>": false,
-        "<C-v>": false,
-        "<C-a>": false,
-        "<C-x>": false,
-        "<C-p>": false,
-        "<C-f>": false,
-        "<C-z>": false
-    },
-    "keyboard.dispatch": "keyCode"
-}'
-
-  # If file doesn't exist, create it
-  if [[ ! -f "$settings_file" ]]; then
-    info "Creating new VS Code settings.json"
-    echo "$desired_content" > "$settings_file"
-    return 0
-  fi
-
-  # If file exists but missing our keys, merge them in
-  if ! grep -q '"vim.handleKeys"' "$settings_file"; then
-    warn "VS Code settings.json exists but missing vim.handleKeys; merging..."
-    tmp_file="$(mktemp)"
-    jq '. + {
-      "vim.handleKeys": {
-        "<C-c>": false,
-        "<C-v>": false,
-        "<C-a>": false,
-        "<C-x>": false,
-        "<C-p>": false,
-        "<C-f>": false,
-        "<C-z>": false
-      },
-      "keyboard.dispatch": "keyCode"
-    }' "$settings_file" > "$tmp_file" && mv "$tmp_file" "$settings_file"
-  else
-    info "VS Code settings.json already contains vim.handleKeys — no changes made."
-  fi
-}
-
-# 9) Install uv (Rust-based Python package manager)
-install_uv() {
-  info "Installing uv (Python package manager)."
-
-  # Prefer pacman/yay for Arch/Omarchy
-  if command -v pacman >/dev/null 2>&1; then
-    if command -v yay >/dev/null 2>&1; then
-      yay -S --noconfirm --needed uv || true
-    else
-      sudo pacman -Sy --needed --noconfirm uv || {
-        warn "uv not in official repos; installing via curl fallback."
-        curl -LsSf https://astral.sh/uv/install.sh | sh
-      }
-    fi
-  # Fallback for other distros (Fedora, Ubuntu, etc.)
-  elif command -v dnf >/dev/null 2>&1; then
-    if ! sudo dnf install -y uv 2>/dev/null; then
-      warn "uv not in Fedora repos; using official install script."
-      curl -LsSf https://astral.sh/uv/install.sh | sh
-    fi
-  elif command -v apt-get >/dev/null 2>&1; then
-    if ! sudo apt-get install -y uv 2>/dev/null; then
-      warn "uv not in Debian/Ubuntu repos; using official install script."
-      curl -LsSf https://astral.sh/uv/install.sh | sh
-    fi
-  else
-    warn "Unknown distro. Installing uv using official script."
-    curl -LsSf https://astral.sh/uv/install.sh | sh
-  fi
-
-  # Ensure uv is on PATH for GUI and CLI
-  mkdir -p "${HOME}/.config/environment.d"
-  cat > "${HOME}/.config/environment.d/uv-path.conf" <<'EOF'
-PATH=$HOME/.cargo/bin:$PATH
-EOF
-  systemctl --user import-environment PATH || true
-
-  if command -v uv >/dev/null 2>&1; then
-    info "uv installed successfully: $(uv --version)"
-  else
-    warn "uv installation may require re-login to update PATH."
-  fi
-}
-
-# Installs TeX Live from official Arch repositories (recommended)
-install_texlive() {
-  info "Installing TeX Live from official Arch repositories..."
-
-  # Check for yay or fall back to pacman
-  local pkgmgr="pacman"
-  if command -v yay &>/dev/null; then
-    pkgmgr="yay"
-  fi
-
-  # Install TeX Live split packages from official repos
-  sudo "$pkgmgr" -Syu --needed --noconfirm \
-    texlive-basic texlive-latex texlive-latexrecommended texlive-latexextra \
-    texlive-bibtexextra texlive-fontsrecommended texlive-pictures \
-    texlive-bin texlive-binextra dvisvgm
-
-  # Verify binaries
-  if command -v pdflatex &>/dev/null && command -v latexmk &>/dev/null; then
-    info "TeX Live installation complete and binaries are in PATH."
-  else
-    warn "TeX Live installed, but binaries not found in PATH."
-    warn "You may need to log out and back in, or add /usr/bin explicitly to PATH."
-  fi
-}
-
 install_packages_from_list() {
   local repo_dir="$HOME/repos/omarchy-setup"
-  local list_file="$repo_dir/packages.list"
+  local list_file="${1:-$repo_dir/packages.list}"
+
+  # Ensure yay is installed
+  if ! command -v yay &>/dev/null; then
+    err "yay is not installed. Please install yay first."
+    return 1
+  fi
 
   info "Installing packages from $list_file"
 
   if [[ ! -f "$list_file" ]]; then
-    warn "No packages.list found at $list_file"
+    warn "No package list found at $list_file"
     return 0
   fi
 
-  # Read list, ignore blanks and comments
+  # Read list, ignoring comments and blank lines
   mapfile -t all_pkgs < <(sed -e 's/#.*$//' -e '/^\s*$/d' "$list_file")
 
   if [[ ${#all_pkgs[@]} -eq 0 ]]; then
-    info "No packages listed. Skipping."
+    info "No packages listed in $list_file. Skipping."
     return 0
   fi
 
-  if [[ ${#all_pkgs[@]} -gt 0 ]]; then
-    info "Installing packages: ${all_pkgs[*]}"
-    yay -S --needed --noconfirm "${all_pkgs[@]}"
+  info "Installing packages: ${all_pkgs[*]}"
+  yay -S --needed --noconfirm "${all_pkgs[@]}"
+}
+
+# Detect a VS Code CLI (Visual Studio Code, Code - OSS, or VSCodium)
+detect_code_cli() {
+  local candidates=("code" "code-oss" "codium" "vscodium")
+  for c in "${candidates[@]}"; do
+    if command -v "$c" &>/dev/null; then
+      echo "$c"
+      return 0
+    fi
+  done
+  return 1
+}
+
+install_vscode_extensions_from_list() {
+  local repo_dir="$HOME/repos/omarchy-setup"
+  local list_file="${1:-$repo_dir/vscode-extensions.list}"
+
+  local CODE_BIN
+  if ! CODE_BIN="$(detect_code_cli)"; then
+    err "VS Code CLI not found on PATH. Install Visual Studio Code (code), Code - OSS (code-oss), or VSCodium (codium)."
+    return 1
+  fi
+
+  info "Installing VS Code extensions from $list_file using '$CODE_BIN'"
+
+  if [[ ! -f "$list_file" ]]; then
+    warn "No extensions list found at $list_file"
+    return 0
+  fi
+
+  mapfile -t extensions < <(sed -e 's/#.*$//' -e '/^\s*$/d' "$list_file")
+  if [[ ${#extensions[@]} -eq 0 ]]; then
+    info "No extensions listed. Skipping."
+    return 0
+  fi
+
+  # Build a set of installed extensions for O(1) checks
+  mapfile -t installed < <("$CODE_BIN" --list-extensions 2>/dev/null || true)
+  local tmp="$(mktemp)"; printf "%s\n" "${installed[@]}" | sort > "$tmp"
+
+  local failed=()
+  for ext in "${extensions[@]}"; do
+    if grep -qx "$ext" "$tmp"; then
+      info "Extension already installed: $ext"
+      continue
+    fi
+    info "Installing extension: $ext"
+    if ! "$CODE_BIN" --install-extension "$ext"; then
+      warn "Failed to install extension: $ext"
+      failed+=("$ext")
+    fi
+  done
+  rm -f "$tmp"
+
+  if [[ ${#failed[@]} -gt 0 ]]; then
+    warn "These extensions failed to install: ${failed[*]}"
+    return 2
+  fi
+  info "Finished installing VS Code extensions."
+}
+
+export_vscode_extensions() {
+  local CODE_BIN
+  if ! CODE_BIN="$(detect_code_cli)"; then
+    err "VS Code CLI not found on PATH."
+    return 1
+  fi
+  local out="${1:-$HOME/repos/omarchy-setup/vscode-extensions.list}"
+  "$CODE_BIN" --list-extensions | sort > "$out"
+  info "Wrote extensions to $out"
+}
+
+setup_vscode_settings() {
+  info "Configuring VS Code user settings..."
+  local settings_dir="$HOME/.config/Code/User"
+  local settings_file="$settings_dir/settings.json"
+  local source_file="$SCRIPT_DIR/vscode-settings.json"
+
+  mkdir -p "$settings_dir"
+  if [[ ! -f "$source_file" ]]; then
+    warn "Source settings file not found at $source_file. Skipping."
+    return 0
+  fi
+
+  # If target exists and is identical, do nothing
+  if [[ -f "$settings_file" ]] && cmp -s "$source_file" "$settings_file"; then
+    info "settings.json already matches source. No changes."
+    return 0
+  fi
+
+  # Backup once per differing content write
+  if [[ -f "$settings_file" ]]; then
+    local backup_file="${settings_file}.bak.$(date +%Y%m%d%H%M%S)"
+    cp -a "$settings_file" "$backup_file"
+    info "Backed up existing settings.json to $backup_file"
+  fi
+
+  cp -a "$source_file" "$settings_file"
+  info "Copied VS Code settings from $source_file to $settings_file"
+
+  if [[ "$EUID" -eq 0 && -n "$SUDO_USER" ]]; then
+    chown "$SUDO_USER":"$SUDO_USER" "$settings_file"
+    info "Adjusted ownership of $settings_file for user $SUDO_USER"
   fi
 }
 
 main() {
-  install_packages
+  install_packages_from_list "$SCRIPT_DIR/packages.list"
   install_oh_my_zsh
   ensure_zshrc
   install_plugins
   configure_zshrc
   make_default_shell
   setup_chromium_workspace_fix
-  install_vscode_with_vim
-  install_vscode_extensions
+  install_vscode_extensions_from_list
   setup_vscode_settings
-  install_uv
-  install_packages_from_list
-  install_texlive
+  install_packages_from_list "$SCRIPT_DIR/texlive-packages.list"
   info "All done."
 }
 
