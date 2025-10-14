@@ -23,9 +23,15 @@ install_oh_my_zsh() {
 }
 
 ensure_zshrc() {
+  local sentinel="${HOME}/.zshrc.omz_backed_up"
   if [ -f "${HOME}/.zshrc" ]; then
-    cp -a "${HOME}/.zshrc" "${HOME}/.zshrc.pre-omz-$(date +%Y%m%d%H%M%S).bak"
-    info "Backed up existing .zshrc"
+    if [ ! -f "$sentinel" ]; then
+      cp -a "${HOME}/.zshrc" "${HOME}/.zshrc.pre-omz-$(date +%Y%m%d%H%M%S).bak"
+      : > "$sentinel"
+      info "Backed up existing .zshrc"
+    else
+      info ".zshrc already backed up previously. Skipping backup."
+    fi
   else
     cp "${HOME}/.oh-my-zsh/templates/zshrc.zsh-template" "${HOME}/.zshrc"
     info "Created new .zshrc from template"
@@ -36,20 +42,23 @@ install_plugins() {
   local ZSH_CUSTOM="${ZSH_CUSTOM:-${HOME}/.oh-my-zsh/custom}"
   mkdir -p "${ZSH_CUSTOM}/plugins"
 
-  if [ ! -d "${ZSH_CUSTOM}/plugins/zsh-autosuggestions" ]; then
+  if [ ! -d "${ZSH_CUSTOM}/plugins/zsh-autosuggestions/.git" ]; then
     info "Installing zsh-autosuggestions plugin."
     git clone https://github.com/zsh-users/zsh-autosuggestions "${ZSH_CUSTOM}/plugins/zsh-autosuggestions"
   else
-    info "zsh-autosuggestions already present."
+    info "Updating zsh-autosuggestions plugin."
+    git -C "${ZSH_CUSTOM}/plugins/zsh-autosuggestions" pull --ff-only || warn "autosuggestions update failed"
   fi
 
-  if [ ! -d "${ZSH_CUSTOM}/plugins/zsh-syntax-highlighting" ]; then
+  if [ ! -d "${ZSH_CUSTOM}/plugins/zsh-syntax-highlighting/.git" ]; then
     info "Installing zsh-syntax-highlighting plugin."
     git clone https://github.com/zsh-users/zsh-syntax-highlighting "${ZSH_CUSTOM}/plugins/zsh-syntax-highlighting"
   else
-    info "zsh-syntax-highlighting already present."
+    info "Updating zsh-syntax-highlighting plugin."
+    git -C "${ZSH_CUSTOM}/plugins/zsh-syntax-highlighting" pull --ff-only || warn "syntax-highlighting update failed"
   fi
 }
+
 
 configure_zshrc() {
   local zshrc="${HOME}/.zshrc"
@@ -168,10 +177,10 @@ EOF
   fi
 
   # f) Clean stale singletons and GPU caches once
-  info "Cleaning Chromium caches and singletons."
-  killall -9 chromium chrome 2>/dev/null || true
-  rm -f "${HOME}/.config/chromium/Singleton"* 2>/dev/null || true
-  rm -rf "${HOME}/.config/chromium/GPUCache" "${HOME}/.config/chromium/ShaderCache" 2>/dev/null || true
+#   info "Cleaning Chromium caches and singletons."
+#   killall -9 chromium chrome 2>/dev/null || true
+#   rm -f "${HOME}/.config/chromium/Singleton"* 2>/dev/null || true
+#   rm -rf "${HOME}/.config/chromium/GPUCache" "${HOME}/.config/chromium/ShaderCache" 2>/dev/null || true
 
   info "Chromium configured. Log out and back in once so GUI PATH takes effect."
 }
@@ -235,28 +244,33 @@ install_vscode_extensions_from_list() {
   fi
 
   mapfile -t extensions < <(sed -e 's/#.*$//' -e '/^\s*$/d' "$list_file")
-
   if [[ ${#extensions[@]} -eq 0 ]]; then
-    info "No extensions listed in $list_file. Skipping."
+    info "No extensions listed. Skipping."
     return 0
   fi
 
+  # Build a set of installed extensions for O(1) checks
+  mapfile -t installed < <("$CODE_BIN" --list-extensions 2>/dev/null || true)
+  local tmp="$(mktemp)"; printf "%s\n" "${installed[@]}" | sort > "$tmp"
+
   local failed=()
   for ext in "${extensions[@]}"; do
+    if grep -qx "$ext" "$tmp"; then
+      info "Extension already installed: $ext"
+      continue
+    fi
     info "Installing extension: $ext"
-    if "$CODE_BIN" --install-extension "$ext" --force; then
-      :
-    else
+    if ! "$CODE_BIN" --install-extension "$ext"; then
       warn "Failed to install extension: $ext"
       failed+=("$ext")
     fi
   done
+  rm -f "$tmp"
 
   if [[ ${#failed[@]} -gt 0 ]]; then
     warn "These extensions failed to install: ${failed[*]}"
     return 2
   fi
-
   info "Finished installing VS Code extensions."
 }
 
@@ -273,36 +287,36 @@ export_vscode_extensions() {
 
 setup_vscode_settings() {
   info "Configuring VS Code user settings..."
-
   local settings_dir="$HOME/.config/Code/User"
   local settings_file="$settings_dir/settings.json"
   local source_file="$SCRIPT_DIR/vscode-settings.json"
 
   mkdir -p "$settings_dir"
-
   if [[ ! -f "$source_file" ]]; then
     warn "Source settings file not found at $source_file. Skipping."
     return 0
   fi
 
-  # Backup existing settings if present
+  # If target exists and is identical, do nothing
+  if [[ -f "$settings_file" ]] && cmp -s "$source_file" "$settings_file"; then
+    info "settings.json already matches source. No changes."
+    return 0
+  fi
+
+  # Backup once per differing content write
   if [[ -f "$settings_file" ]]; then
     local backup_file="${settings_file}.bak.$(date +%Y%m%d%H%M%S)"
     cp -a "$settings_file" "$backup_file"
     info "Backed up existing settings.json to $backup_file"
   fi
 
-  # Copy new settings
   cp -a "$source_file" "$settings_file"
   info "Copied VS Code settings from $source_file to $settings_file"
 
-  # Optional: fix ownership if script is run with sudo
   if [[ "$EUID" -eq 0 && -n "$SUDO_USER" ]]; then
     chown "$SUDO_USER":"$SUDO_USER" "$settings_file"
     info "Adjusted ownership of $settings_file for user $SUDO_USER"
   fi
-
-  info "VS Code settings configured successfully."
 }
 
 main() {
