@@ -319,6 +319,48 @@ setup_vscode_settings() {
   fi
 }
 
+remap_capslock_to_escape_in_user_input_conf() {
+  info "Setting Caps Lock → Escape in ~/.config/hypr/input.conf"
+
+  local user_conf="$HOME/.config/hypr/input.conf"
+  local modified=false
+
+  mkdir -p "$(dirname "$user_conf")"
+
+  if [[ -f "$user_conf" ]]; then
+    # If already set correctly, skip
+    if grep -qE '^\s*kb_options\s*=\s*caps:escape' "$user_conf"; then
+      info "Caps Lock already remapped to Escape. No changes needed."
+      return
+    fi
+
+    # Replace existing kb_options line, or append inside input block
+    if grep -qE '^\s*kb_options\s*=' "$user_conf"; then
+      sed -i 's/^\s*kb_options\s*=.*/    kb_options = caps:escape/' "$user_conf"
+    else
+      awk '
+        /^input\s*\{/ { print; print "    kb_options = caps:escape"; next }
+        { print }
+      ' "$user_conf" > "${user_conf}.tmp" && mv "${user_conf}.tmp" "$user_conf"
+    fi
+    modified=true
+  else
+    cat > "$user_conf" <<'EOF'
+input {
+    kb_options = caps:escape
+}
+EOF
+    modified=true
+  fi
+
+  if [[ "$modified" == true ]]; then
+    info "Updated $user_conf to remap Caps Lock → Escape."
+    warn "Reload Hyprland manually with: hyprctl reload  — or log out/in for this to take effect."
+  else
+    info "No modifications required."
+  fi
+}
+
 main() {
   install_packages_from_list "$SCRIPT_DIR/packages.list"
   install_oh_my_zsh
@@ -336,6 +378,8 @@ main() {
   # updating or installing packages. That way, you won't miss required manual
   # interventions.
   yay -S --needed --noconfirm informant
+
+  remap_capslock_to_escape_in_user_input_conf
   info "All done."
 }
 
