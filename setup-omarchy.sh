@@ -401,8 +401,14 @@ ensure_no_hardware_cursor() {
     touch "$config_file"
   }
 
-  # Check if the line already exists
-  if grep -qE '^\s*cursor\s*\{[[:space:]]*no_hardware_cursors\s*=\s*true' "$config_file"; then
+  # If the file already contains a cursor block with no_hardware_cursors=true, skip
+  if awk '
+    BEGIN { inside_cursor = 0 }
+    /^\s*cursor\s*\{/ { inside_cursor = 1; next }
+    /^\s*\}/ { inside_cursor = 0; next }
+    inside_cursor && /^\s*no_hardware_cursors\s*=\s*true/ { found = 1 }
+    END { exit !found }
+  ' "$config_file"; then
     echo "[INFO] Cursor setting already present in $config_file"
   else
     echo "[INFO] Adding cursor { no_hardware_cursors = true } to $config_file"
@@ -479,6 +485,8 @@ main() {
   # To install more packages run: "sudo informant read --all"
   yay -S --needed --noconfirm informant
 
+  systemctl --user enable --now pipewire.service pipewire-pulse.service wireplumber.service
+  systemctl --user enable --now sunshine.service
   ensure_no_hardware_cursor
   remap_capslock_to_escape_in_user_input_conf
   set_looknfeel_gaps
