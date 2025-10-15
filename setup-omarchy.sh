@@ -361,6 +361,37 @@ EOF
   fi
 }
 
+set_looknfeel_gaps() {
+  local conf="$HOME/.config/hypr/looknfeel.conf"
+  [[ -f "$conf" ]] || { echo "[ERR] $conf not found"; return 1; }
+
+  cp -a "$conf" "${conf}.bak"
+
+  # Substitute commented gap lines to active =2 versions
+  sed -i \
+    -e 's/^[[:space:]]*#*[[:space:]]*gaps_in.*/    gaps_in = 2/' \
+    -e 's/^[[:space:]]*#*[[:space:]]*gaps_out.*/    gaps_out = 2/' \
+    "$conf"
+
+  echo "[OK] Updated $conf (backup at ${conf}.bak)"
+}
+
+set_plymouth_theme_bgrt() {
+  local current_theme
+  current_theme="$(sudo plymouth-set-default-theme 2>/dev/null || echo unknown)"
+
+  if [[ "$current_theme" == "bgrt" ]]; then
+    echo "[INFO] Plymouth theme is already set to 'bgrt'. Nothing to do."
+    return 0
+  fi
+
+  echo "[INFO] Changing Plymouth theme from '$current_theme' to 'bgrt'..."
+  sudo plymouth-set-default-theme bgrt
+  echo "[INFO] Rebuilding initramfs for Limine..."
+  sudo limine-mkinitcpio -P
+  echo "[INFO] Plymouth theme set to 'bgrt' and Limine initramfs rebuilt."
+}
+
 main() {
   install_packages_from_list "$SCRIPT_DIR/packages.list"
   install_oh_my_zsh
@@ -380,6 +411,8 @@ main() {
   yay -S --needed --noconfirm informant
 
   remap_capslock_to_escape_in_user_input_conf
+  set_looknfeel_gaps
+  set_plymouth_theme_bgrt
   info "All done."
 }
 
