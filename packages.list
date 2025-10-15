@@ -1,17 +1,13 @@
 # posix compatibile shell
-zsh
-
 #modern python venv manager
-uv
-
 # IDE
-visual-studio-code-bin
-
 # kde partition manager
-partitionmanager
-
 # andoid drivers
+zsh
+uv
+visual-studio-code-bin
+partitionmanager
 android-tools
 libmtp
 gvfs-mtp
-android-udev
+android-udevsunshine
