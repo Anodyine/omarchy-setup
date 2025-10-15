@@ -408,6 +408,7 @@ main() {
   # If you run this, you will need to read the latest news before
   # updating or installing packages. That way, you won't miss required manual
   # interventions.
+  # To install more packages run: "sudo informant read --all"
   yay -S --needed --noconfirm informant
 
   remap_capslock_to_escape_in_user_input_conf
