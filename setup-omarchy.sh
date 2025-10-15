@@ -392,6 +392,74 @@ set_plymouth_theme_bgrt() {
   echo "[INFO] Plymouth theme set to 'bgrt' and Limine initramfs rebuilt."
 }
 
+ensure_no_hardware_cursor() {
+  local config_file="$HOME/.config/hypr/hyprland.conf"
+
+  # Create config if it doesn't exist
+  [[ -f "$config_file" ]] || {
+    mkdir -p "$(dirname "$config_file")"
+    touch "$config_file"
+  }
+
+  # Check if the line already exists
+  if grep -qE '^\s*cursor\s*\{[[:space:]]*no_hardware_cursors\s*=\s*true' "$config_file"; then
+    echo "[INFO] Cursor setting already present in $config_file"
+  else
+    echo "[INFO] Adding cursor { no_hardware_cursors = true } to $config_file"
+    printf "\n%s\n" "cursor {
+    no_hardware_cursors = true
+}" >>"$config_file"
+  fi
+}
+
+sync_kanagawa_background() {
+  local SRC="$HOME/repos/omarchy-setup/reference-files/wallpapers/Anime-Girl3.png"
+  local DEST_DIR="$HOME/.config/omarchy/themes/kanagawa/backgrounds"
+  local TARGET_BASENAME
+  local TARGET
+
+  TARGET_BASENAME="$(basename "$SRC")"
+  TARGET="$DEST_DIR/$TARGET_BASENAME"
+
+  # Sanity check
+  if [[ ! -f "$SRC" ]]; then
+    printf "\033[1;31m[ERR ]\033[0m Source image not found: %s\n" "$SRC" >&2
+    return 1
+  fi
+
+  # Ensure destination directory exists
+  mkdir -p "$DEST_DIR"
+
+  # Copy only if different or missing
+  if [[ -f "$TARGET" ]]; then
+    if cmp -s "$SRC" "$TARGET"; then
+      printf "\033[1;32m[INFO]\033[0m Target already up to date: %s\n" "$TARGET"
+    else
+      cp -f -- "$SRC" "$TARGET"
+      printf "\033[1;32m[INFO]\033[0m Updated background: %s\n" "$TARGET"
+    fi
+  else
+    cp -f -- "$SRC" "$TARGET"
+    printf "\033[1;32m[INFO]\033[0m Installed background: %s\n" "$TARGET"
+  fi
+
+  # Remove all other PNG and JPG files in the destination directory
+  shopt -s nullglob nocaseglob
+  local f removed_any=false
+  for f in "$DEST_DIR"/*.{png,jpg,jpeg}; do
+    [[ "$(basename "$f")" == "$TARGET_BASENAME" ]] && continue
+    rm -f -- "$f"
+    removed_any=true
+    printf "\033[1;33m[WARN]\033[0m Removed extra image: %s\n" "$f"
+  done
+  shopt -u nullglob nocaseglob
+
+  if [[ "$removed_any" == false ]]; then
+    printf "\033[1;32m[INFO]\033[0m No extra PNG/JPGs to remove in %s\n" "$DEST_DIR"
+  fi
+  omarchy-theme-set kanagawa
+}
+
 main() {
   install_packages_from_list "$SCRIPT_DIR/packages.list"
   install_oh_my_zsh
@@ -411,9 +479,11 @@ main() {
   # To install more packages run: "sudo informant read --all"
   yay -S --needed --noconfirm informant
 
+  ensure_no_hardware_cursor
   remap_capslock_to_escape_in_user_input_conf
   set_looknfeel_gaps
   set_plymouth_theme_bgrt
+  sync_kanagawa_background
   info "All done."
 }
 
