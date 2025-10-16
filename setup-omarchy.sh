@@ -419,7 +419,7 @@ ensure_no_hardware_cursor() {
 }
 
 sync_kanagawa_background() {
-  local SRC="$HOME/repos/omarchy-setup/reference-files/wallpapers/Anime-Girl3.png"
+  local SRC="$HOME/repos/omarchy-setup/reference-files/wallpapers/Fantasy-Landscape3.png"
   local DEST_DIR="$HOME/.config/omarchy/themes/kanagawa/backgrounds"
   local TARGET_BASENAME
   local TARGET
