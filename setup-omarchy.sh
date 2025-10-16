@@ -487,6 +487,7 @@ main() {
 
   systemctl --user enable --now pipewire.service pipewire-pulse.service wireplumber.service
   systemctl --user enable --now sunshine.service
+  sudo systemctl enable --now sshd.service
   ensure_no_hardware_cursor
   remap_capslock_to_escape_in_user_input_conf
   set_looknfeel_gaps
