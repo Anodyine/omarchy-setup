@@ -462,6 +462,29 @@ sync_kanagawa_background() {
   if [[ "$removed_any" == false ]]; then
     printf "\033[1;32m[INFO]\033[0m No extra PNG/JPGs to remove in %s\n" "$DEST_DIR"
   fi
+
+  # --- WezTerm Kanagawa theme setup ---
+  info "Installing WezTerm Kanagawa theme"
+
+  mkdir -p "$HOME/.config/wezterm"
+
+  # Backup existing config if present
+  if [ -f "$HOME/.wezterm.lua" ]; then
+    cp -n "$HOME/.wezterm.lua" "$HOME/.wezterm.lua.bak"
+    info "Backed up existing .wezterm.lua to .wezterm.lua.bak"
+  fi
+
+  # Copy reference file into place
+  cp -f "$HOME/repos/omarchy-setup/reference-files/.wezterm.lua" "$HOME/.wezterm.lua"
+
+  # Confirm install
+  if [ -f "$HOME/.wezterm.lua" ]; then
+    success "WezTerm Kanagawa theme installed to ~/.wezterm.lua"
+  else
+    warn "WezTerm config copy failed!"
+  fi
+
+
   omarchy-theme-set kanagawa
 }
 
