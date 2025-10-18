@@ -9,6 +9,8 @@ warn() { printf "\033[1;33m[WARN]\033[0m %s\n" "$*"; }
 err()  { printf "\033[1;31m[ERR ]\033[0m %s\n" "$*" >&2; }
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR" && pwd)"
+source "$REPO_ROOT/lib/install-packages.sh"
 
 install_oh_my_zsh() {
   if [ -d "${HOME}/.oh-my-zsh" ]; then
@@ -183,35 +185,6 @@ EOF
 #   rm -rf "${HOME}/.config/chromium/GPUCache" "${HOME}/.config/chromium/ShaderCache" 2>/dev/null || true
 
   info "Chromium configured. Log out and back in once so GUI PATH takes effect."
-}
-
-install_packages_from_list() {
-  local repo_dir="$HOME/repos/omarchy-setup"
-  local list_file="${1:-$repo_dir/packages.list}"
-
-  # Ensure yay is installed
-  if ! command -v yay &>/dev/null; then
-    err "yay is not installed. Please install yay first."
-    return 1
-  fi
-
-  info "Installing packages from $list_file"
-
-  if [[ ! -f "$list_file" ]]; then
-    warn "No package list found at $list_file"
-    return 0
-  fi
-
-  # Read list, ignoring comments and blank lines
-  mapfile -t all_pkgs < <(sed -e 's/#.*$//' -e '/^\s*$/d' "$list_file")
-
-  if [[ ${#all_pkgs[@]} -eq 0 ]]; then
-    info "No packages listed in $list_file. Skipping."
-    return 0
-  fi
-
-  info "Installing packages: ${all_pkgs[*]}"
-  yay -S --needed --noconfirm "${all_pkgs[@]}"
 }
 
 # Detect a VS Code CLI (Visual Studio Code, Code - OSS, or VSCodium)
