@@ -119,43 +119,48 @@ make_default_shell() {
     info "Default shell changed. Log out and back in, or start zsh now with: zsh"
   fi
 }
-
 setup_chromium_workspace_fix() {
   if ! command -v chromium >/dev/null 2>&1; then
     warn "chromium not found on PATH. Skipping Chromium setup."
     return 0
   fi
 
-  info "Configuring Chromium wrapper and flags."
+  info "Reverting old Omarchy Chromium workspace setup."
 
-  # a) Wrapper with stable flags
+  # Clean up any previous configuration
+  rm -f \
+    "${HOME}/.local/share/omarchy/bin/chromium-stable" \
+    "${HOME}/.config/chromium-flags.conf" \
+    "${HOME}/.config/environment.d/omarchy-path.conf" \
+    "${HOME}/.local/share/applications/chromium.desktop" 2>/dev/null || true
+  systemctl --user import-environment PATH || true
+
+  info "Configuring Chromium workspace crash fix (Wayland flag)."
+
+  # a) Wrapper with the new working flag
   mkdir -p "${HOME}/.local/share/omarchy/bin"
   cat > "${HOME}/.local/share/omarchy/bin/chromium-stable" <<'EOF'
 #!/usr/bin/env bash
 exec chromium \
-  --ozone-platform=x11 \
-  --use-gl=egl-angle \
-  --use-angle=opengl \
+  --disable-features=WaylandWpColorManagerV1 \
   "$@"
 EOF
   chmod +x "${HOME}/.local/share/omarchy/bin/chromium-stable"
 
-  # b) Ensure GUI apps see the wrapper directory
+  # b) Add wrapper path to environment
   mkdir -p "${HOME}/.config/environment.d"
   cat > "${HOME}/.config/environment.d/omarchy-path.conf" <<'EOF'
 PATH=$HOME/.local/share/omarchy/bin:$PATH
 EOF
   systemctl --user import-environment PATH || true
 
-  # c) Global Chromium flags file
+  # c) Chromium global flags file (optional persistence)
   mkdir -p "${HOME}/.config"
   cat > "${HOME}/.config/chromium-flags.conf" <<'EOF'
---ozone-platform=x11
---use-gl=egl-angle
---use-angle=opengl
+--disable-features=WaylandWpColorManagerV1
 EOF
 
-  # d) Override desktop file to use wrapper
+  # d) Override desktop launcher to use our wrapper
   mkdir -p "${HOME}/.local/share/applications"
   if [ -f /usr/share/applications/chromium.desktop ]; then
     cp /usr/share/applications/chromium.desktop "${HOME}/.local/share/applications/" 2>/dev/null || true
@@ -167,7 +172,7 @@ EOF
     warn "Could not find /usr/share/applications/chromium.desktop to override."
   fi
 
-  # e) Make omarchy webapps use the same wrapper and log
+  # e) Patch Omarchy webapp launcher if it exists
   if [ -f "${HOME}/.local/share/omarchy/bin/omarchy-launch-webapp" ]; then
     mkdir -p "${HOME}/.local/share/omarchy/logs"
     sed -i "s|^\s*exec\s*chromium|exec ${HOME}/.local/share/omarchy/bin/chromium-stable --enable-logging=stderr --v=1 2>>${HOME}/.local/share/omarchy/logs/chromium.log|" \
@@ -176,13 +181,7 @@ EOF
     warn "omarchy-launch-webapp not found. Skipping webapp launcher patch."
   fi
 
-  # f) Clean stale singletons and GPU caches once
-#   info "Cleaning Chromium caches and singletons."
-#   killall -9 chromium chrome 2>/dev/null || true
-#   rm -f "${HOME}/.config/chromium/Singleton"* 2>/dev/null || true
-#   rm -rf "${HOME}/.config/chromium/GPUCache" "${HOME}/.config/chromium/ShaderCache" 2>/dev/null || true
-
-  info "Chromium configured. Log out and back in once so GUI PATH takes effect."
+  info "Chromium Wayland workspace fix applied. Log out and back in for PATH changes to take effect."
 }
 
 install_packages_from_list() {
@@ -491,7 +490,7 @@ main() {
   ensure_no_hardware_cursor
   remap_capslock_to_escape_in_user_input_conf
   set_looknfeel_gaps
-  set_plymouth_theme_bgrt
+  #set_plymouth_theme_bgrt
   sync_kanagawa_background
   info "All done."
 }
