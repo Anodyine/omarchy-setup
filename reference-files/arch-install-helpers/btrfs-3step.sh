@@ -1,7 +1,81 @@
 #!/usr/bin/env bash
 # btrfs-3step.sh
-# Partition -> Format -> Layout for Arch manual install with Btrfs.
-# Subvols: @, @home, @log, @cache, @snapshots
+
+# ==============================================================================
+# HOW TO USE THIS SCRIPT (Arch ISO + Btrfs 3-step: partition -> format -> layout)
+# ==============================================================================
+# Summary:
+#   This script prepares a disk for an Arch install with a minimal Btrfs layout.
+#   Subvols created: @ (root), @home, @log, @cache, @snapshots
+#   Mounts everything at /mnt so you can use archinstall Manual.
+#
+# Assumptions:
+#   - You are booted into the Arch ISO.
+#   - Target disk is /dev/nvme0n1 (change if different).
+#   - You want a 20 GiB FAT32 EFI partition and the rest Btrfs.
+#
+# Fetching the script on the ISO:
+#   curl -LO https://raw.githubusercontent.com/<user>/<repo>/main/path/btrfs-3step.sh
+#   chmod +x btrfs-3step.sh
+#   # Optional: keep it in RAM for convenience
+#   mv btrfs-3step.sh /root/ && cd /root
+#
+# Networking on ISO (if needed):
+#   iwctl          # connect to Wi-Fi
+#   ping archlinux.org
+#
+# Safety checks before starting:
+#   lsblk -f
+#   mount | grep nvme0n1 || true
+#   swapoff -a
+#   umount -R /mnt 2>/dev/null || true
+#
+# Optional full wipe of old signatures and GPT (DESTROYS DATA):
+#   wipefs -a /dev/nvme0n1
+#   # If available and you want a clean GPT:
+#   # sgdisk -Z /dev/nvme0n1
+#   partprobe /dev/nvme0n1
+#
+# Step 1: Partition (DESTROYS DATA ON THE DISK)
+#   sudo /root/btrfs-3step.sh -s partition -d /dev/nvme0n1
+#   # If disk already has partitions and you want to overwrite:
+#   # sudo /root/btrfs-3step.sh -s partition -d /dev/nvme0n1 -F
+#   # Proof:
+#   #   parted -s /dev/nvme0n1 print
+#   #   lsblk -o NAME,SIZE,TYPE,FSTYPE,LABEL,PARTLABEL /dev/nvme0n1
+#
+# Step 2: Format
+#   sudo /root/btrfs-3step.sh -s format \
+#        -d /dev/nvme0n1 \
+#        -e /dev/nvme0n1p1 \
+#        -b /dev/nvme0n1p2
+#   # Optional labels and compression:
+#   #   -L ARCH-BTRFS   -E BOOT   -C zstd:3
+#   # Proof:
+#   #   lsblk -f
+#   #   parted -s /dev/nvme0n1 print
+#
+# Step 3: Layout and Mounts
+#   sudo /root/btrfs-3step.sh -s layout \
+#        -e /dev/nvme0n1p1 \
+#        -b /dev/nvme0n1p2
+#   # Proof:
+#   #   findmnt -R -no TARGET,SOURCE,FSTYPE,OPTIONS /mnt
+#
+# Using archinstall:
+#   archinstall
+#   -> Use Manual partitioning
+#   -> Root is /mnt already set up with subvolumes
+#   After the installer writes the system:
+#   genfstab -U /mnt | tee -a /mnt/etc/fstab
+#
+
+# Notes:
+#   - 20 GiB for ESP is larger than typical; 512 MiB to 1 GiB is common.
+#     This script uses 20 GiB because to allow experimentation with various OS. Adjust if desired.
+#   - Compression default is zstd:3. Tune with -C.
+#   - This script does not set up swap. Add swapfile later if needed.
+# ==============================================================================
 
 set -euo pipefail
 
