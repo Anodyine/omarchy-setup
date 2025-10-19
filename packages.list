@@ -7,11 +7,6 @@ libmtp
 gvfs-mtp
 android-udev
 sunshine
-pipewire
-pipewire-alsa
-pipewire-pulse
-pipewire-jack
-wireplumber
 fzf
 netbird
 xp-pen-tablet

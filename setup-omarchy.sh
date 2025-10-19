@@ -375,21 +375,21 @@ set_looknfeel_gaps() {
   echo "[OK] Updated $conf (backup at ${conf}.bak)"
 }
 
-set_plymouth_theme_bgrt() {
-  local current_theme
-  current_theme="$(sudo plymouth-set-default-theme 2>/dev/null || echo unknown)"
+# set_plymouth_theme_bgrt() {
+#   local current_theme
+#   current_theme="$(sudo plymouth-set-default-theme 2>/dev/null || echo unknown)"
 
-  if [[ "$current_theme" == "bgrt" ]]; then
-    echo "[INFO] Plymouth theme is already set to 'bgrt'. Nothing to do."
-    return 0
-  fi
+#   if [[ "$current_theme" == "bgrt" ]]; then
+#     echo "[INFO] Plymouth theme is already set to 'bgrt'. Nothing to do."
+#     return 0
+#   fi
 
-  echo "[INFO] Changing Plymouth theme from '$current_theme' to 'bgrt'..."
-  sudo plymouth-set-default-theme bgrt
-  echo "[INFO] Rebuilding initramfs for Limine..."
-  sudo limine-mkinitcpio -P
-  echo "[INFO] Plymouth theme set to 'bgrt' and Limine initramfs rebuilt."
-}
+#   echo "[INFO] Changing Plymouth theme from '$current_theme' to 'bgrt'..."
+#   sudo plymouth-set-default-theme bgrt
+#   echo "[INFO] Rebuilding initramfs for Limine..."
+#   sudo limine-mkinitcpio -P
+#   echo "[INFO] Plymouth theme set to 'bgrt' and Limine initramfs rebuilt."
+# }
 
 ensure_no_hardware_cursor() {
   local config_file="$HOME/.config/hypr/hyprland.conf"
@@ -479,13 +479,61 @@ sync_kanagawa_background() {
 
   # Confirm install
   if [ -f "$HOME/.wezterm.lua" ]; then
-    success "WezTerm Kanagawa theme installed to ~/.wezterm.lua"
+    info "WezTerm Kanagawa theme installed to ~/.wezterm.lua"
   else
     warn "WezTerm config copy failed!"
   fi
 
 
   omarchy-theme-set kanagawa
+}
+
+install_omarchy_screensaver() {
+  local src="${HOME}/repos/omarchy-setup/reference-files/screensaver.txt"
+  local dest="${HOME}/.config/omarchy/branding/screensaver.txt"
+
+  info "Installing Omarchy screensaver text..."
+
+  if [[ ! -f "$src" ]]; then
+    warn "Source file not found: $src"
+    return 1
+  fi
+
+  mkdir -p "$(dirname "$dest")"
+
+  if [[ -f "$dest" ]] && cmp -s "$src" "$dest"; then
+    info "Screensaver already up to date."
+  else
+    if [[ -f "$dest" ]]; then
+      cp "$dest" "${dest}.bak.$(date +%Y%m%d-%H%M%S)"
+      info "Backed up existing screensaver.txt"
+    fi
+    cp "$src" "$dest"
+    info "Installed new screensaver.txt"
+  fi
+}
+
+install_omarchy_splash_logo() {
+  local src="${HOME}/repos/omarchy-setup/reference-files/logo.png"
+  local dest="/usr/share/plymouth/themes/omarchy/logo.png"
+
+  info "Installing Omarchy splash logo..."
+
+  if [[ ! -f "$src" ]]; then
+    warn "Source file not found: $src"
+    return 1
+  fi
+
+  if [[ -f "$dest" ]] && sudo cmp -s "$src" "$dest"; then
+    info "Logo already up to date."
+  else
+    if [[ -f "$dest" ]]; then
+      sudo cp "$dest" "${dest}.bak.$(date +%Y%m%d-%H%M%S)"
+      info "Backed up existing logo.png"
+    fi
+    sudo cp "$src" "$dest"
+    info "Installed new logo.png"
+  fi
 }
 
 main() {
@@ -513,6 +561,9 @@ main() {
   ensure_no_hardware_cursor
   remap_capslock_to_escape_in_user_input_conf
   set_looknfeel_gaps
+  install_omarchy_screensaver
+  install_omarchy_splash_logo
+  sudo mkinitcpio -P
   #set_plymouth_theme_bgrt
   sync_kanagawa_background
   info "All done."
