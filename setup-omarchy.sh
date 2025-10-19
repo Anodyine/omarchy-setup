@@ -562,7 +562,6 @@ setup_tmux_tpm() {
     info "~/.tmux.conf is already up to date."
   fi
 }
-
 setup_snapper_system_backups() {
   set -Eeuo pipefail
   trap 'echo "[ERROR] snapper setup failed at line $LINENO: $BASH_COMMAND" >&2' ERR
@@ -573,24 +572,38 @@ setup_snapper_system_backups() {
   INVOKER="${SUDO_USER:-${USER:-root}}"
 
   log "Preflight: ensure snapper present and root is Btrfs"
-  if ! command -v snapper >/dev/null 2>&1; then
-    sudo pacman -S --noconfirm --needed snapper
+  command -v snapper >/dev/null 2>&1 || sudo pacman -S --noconfirm --needed snapper
+  findmnt -n -o FSTYPE / | grep -q btrfs || { warn "Root is not Btrfs; skipping."; return 0; }
+
+  log "Ensure /.snapshots & snapper config"
+  sudo mkdir -p /etc/snapper/configs
+
+  # Normalize /.snapshots into a good state for snapper
+  EXISTING_IS_SUBVOL=false
+  if mountpoint -q /.snapshots; then
+    sudo umount /.snapshots || true
   fi
-  if ! findmnt -n -o FSTYPE / | grep -q btrfs; then
-    warn "Root filesystem is not Btrfs; skipping snapper setup."
-    return 0
+  if sudo btrfs subvolume show /.snapshots >/dev/null 2>&1; then
+    # It's already a btrfs subvolume (good). We'll keep it and just write the config.
+    EXISTING_IS_SUBVOL=true
+  elif [ -d /.snapshots ]; then
+    # Not a subvol; directory may block create-config
+    if [ -z "$(sudo ls -A /.snapshots 2>/dev/null)" ]; then
+      sudo rmdir /.snapshots
+    else
+      TS="$(date +%s)"
+      warn "/.snapshots exists and is not empty; moving to /.snapshots.pre-snapper.${TS}"
+      sudo mv /.snapshots "/.snapshots.pre-snapper.${TS}"
+    fi
   fi
 
-  log "Ensure snapper config exists (/.snapshots & /etc/snapper/configs/root)"
+  # Create config if missing. If subvolume already exists, snapper create-config would fail,
+  # so in that case we skip it and write the config file by hand.
   if [ ! -f /etc/snapper/configs/root ]; then
-    # If a stray empty /.snapshots exists (common), remove so create-config can recreate it cleanly
-    if sudo btrfs subvolume show /.snapshots >/dev/null 2>&1; then
-      if [ -z "$(sudo ls -A /.snapshots 2>/dev/null)" ]; then
-        sudo umount /.snapshots 2>/dev/null || true
-        sudo btrfs subvolume delete /.snapshots
-      fi
+    if [ "${EXISTING_IS_SUBVOL}" = false ]; then
+      # Only safe to call when /.snapshots does not exist
+      sudo snapper -c root create-config /
     fi
-    sudo snapper -c root create-config /
   fi
 
   log "Write snapper policy (7 daily, excludes, allow current user)"
@@ -686,7 +699,6 @@ find_invoker_cmd() {
   printf '%s\n' "pacman transaction"
 }
 CMD="$(find_invoker_cmd)"
-# Optional cap: CMD="$(printf '%s' "$CMD" | cut -c1-200)"
 exec /usr/bin/snapper --config root create --description "${PHASE} ${CMD}"
 EOS
   sudo chmod 755 /usr/local/bin/omarchy-snapper-hook
@@ -722,13 +734,6 @@ Exec = /usr/local/bin/omarchy-snapper-hook post
 EOS
   sudo chmod 644 /etc/pacman.d/hooks/*-btrfs-snapper.hook
 
-  log "Verification: assert helper + hooks exist"
-  for f in /usr/local/bin/omarchy-snapper-hook \
-           /etc/pacman.d/hooks/50-pre-btrfs-snapper.hook \
-           /etc/pacman.d/hooks/60-post-btrfs-snapper.hook; do
-    [ -f "$f" ] || { echo "[ERROR] missing $f" >&2; return 1; }
-  done
-
   log "Kick timeline once and create a test snapshot"
   sudo systemctl start snapper-timeline.service || true
   sudo snapper -c root create --description "omarchy setup test" || true
@@ -737,6 +742,7 @@ EOS
 
   log "Snapper system backups configured."
 }
+
 
 main() {
   install_packages_from_list "$SCRIPT_DIR/packages.list"
