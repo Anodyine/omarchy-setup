@@ -564,47 +564,43 @@ setup_tmux_tpm() {
 }
 
 setup_snapper_system_backups() {
-  set -euo pipefail
+  set -Eeuo pipefail
+  trap 'echo "[ERROR] snapper setup failed at line $LINENO: $BASH_COMMAND" >&2' ERR
 
-  info() { printf "[info] %s\n" "$*"; }
-  warn() { printf "[warn] %s\n" "$*" >&2; }
+  log()  { printf "[INFO] %s\n" "$*"; }
+  warn() { printf "[WARN] %s\n" "$*" >&2; }
 
-  # 0) Preconditions
+  INVOKER="${SUDO_USER:-${USER:-root}}"
+
+  log "Preflight: ensure snapper present and root is Btrfs"
   if ! command -v snapper >/dev/null 2>&1; then
-    info "Installing snapper"
     sudo pacman -S --noconfirm --needed snapper
   fi
   if ! findmnt -n -o FSTYPE / | grep -q btrfs; then
-    warn "Root is not Btrfs. Skipping Snapper setup."
+    warn "Root filesystem is not Btrfs; skipping snapper setup."
     return 0
   fi
 
-  # 1) Ensure /.snapshots subvolume and snapper config exist
+  log "Ensure snapper config exists (/.snapshots & /etc/snapper/configs/root)"
   if [ ! -f /etc/snapper/configs/root ]; then
-    info "Creating snapper config for /"
-    # If a stray empty /.snapshots exists, remove it so create-config succeeds
-    if sudo test -d /.snapshots; then
-      # Only delete if it is a btrfs subvolume and empty
-      if sudo btrfs subvolume show /.snapshots >/dev/null 2>&1; then
-        if [ -z "$(sudo ls -A /.snapshots 2>/dev/null)" ]; then
-          sudo umount /.snapshots 2>/dev/null || true
-          sudo btrfs subvolume delete /.snapshots
-        fi
+    # If a stray empty /.snapshots exists (common), remove so create-config can recreate it cleanly
+    if sudo btrfs subvolume show /.snapshots >/dev/null 2>&1; then
+      if [ -z "$(sudo ls -A /.snapshots 2>/dev/null)" ]; then
+        sudo umount /.snapshots 2>/dev/null || true
+        sudo btrfs subvolume delete /.snapshots
       fi
     fi
     sudo snapper -c root create-config /
-  else
-    info "Snapper config exists"
   fi
 
-  # 2) Write desired snapper policy (idempotent overwrite)
-  info "Writing /etc/snapper/configs/root"
-  sudo tee /etc/snapper/configs/root >/dev/null <<'EOF'
+  log "Write snapper policy (7 daily, excludes, allow current user)"
+  sudo tee /etc/snapper/configs/root >/dev/null <<EOF
 SUBVOLUME="/"
 FSTYPE="btrfs"
-ALLOW_USERS="anodyine"
+ALLOW_USERS="${INVOKER}"
 SYNC_ACL="no"
 
+# Timeline: keep 7 daily snapshots
 TIMELINE_CREATE="yes"
 TIMELINE_CLEANUP="yes"
 TIMELINE_MIN_AGE="1800"
@@ -615,33 +611,31 @@ TIMELINE_LIMIT_MONTHLY="0"
 TIMELINE_LIMIT_YEARLY="0"
 
 # Exclude dev tiers and transient files
-EXCLUDE="/opt/models-dev /var/lib/docker-dev /home/anodyine/Downloads"
+EXCLUDE="/opt/models-dev /var/lib/docker-dev /home/${INVOKER}/Downloads"
 EOF
   sudo chown root:root /etc/snapper/configs/root
   sudo chmod 600 /etc/snapper/configs/root
 
-  # 3) Ensure @snapshots mounts explicitly (fstab)
-  info "Ensuring /.snapshots mount exists"
-  SNAP_UUID="$(blkid -o value -s UUID "$(findmnt -n -o SOURCE /)")"
+  log "Register config for Arch timers (/etc/conf.d/snapper)"
+  echo 'SNAPPER_CONFIGS="root"' | sudo tee /etc/conf.d/snapper >/dev/null
+
+  log "Mount /.snapshots via fstab (subvol=@snapshots)"
+  ROOT_SRC="$(findmnt -n -o SOURCE / || true)"
+  SNAP_UUID="$( [ -n "$ROOT_SRC" ] && blkid -o value -s UUID "$ROOT_SRC" || echo )"
   sudo mkdir -p /.snapshots
-  if ! grep -qE '^[^#].*\s/\.snapshots\s+btrfs\s+.*subvol=@snapshots' /etc/fstab; then
+  if [ -n "$SNAP_UUID" ] && ! grep -qE '^[^#].*\s/\.snapshots\s+btrfs\s+.*subvol=@snapshots' /etc/fstab; then
     echo "UUID=${SNAP_UUID} /.snapshots btrfs subvol=@snapshots,defaults,noatime 0 0" | sudo tee -a /etc/fstab >/dev/null
   fi
   sudo mount -a || true
 
-  # 4) Enable timers with Persistent=true
-  info "Enabling timeline + cleanup timers with Persistent=true"
-  sudo systemctl enable --now snapper-timeline.timer snapper-cleanup.timer
+  log "Enable timers and ensure missed runs happen on boot (Persistent=true)"
+  sudo systemctl enable --now snapper-timeline.timer snapper-cleanup.timer || true
   sudo mkdir -p /etc/systemd/system/snapper-timeline.timer.d
   printf "[Timer]\nPersistent=true\n" | sudo tee /etc/systemd/system/snapper-timeline.timer.d/override.conf >/dev/null
   sudo systemctl daemon-reload
-  sudo systemctl restart snapper-timeline.timer snapper-cleanup.timer
+  sudo systemctl restart snapper-timeline.timer snapper-cleanup.timer || true
 
-  # 5) Register config for Arch helper
-  echo 'SNAPPER_CONFIGS="root"' | sudo tee /etc/conf.d/snapper >/dev/null
-
-  # 6) Create prod/dev subvolumes for models and docker and add to fstab
-  info "Creating prod/dev subvolumes for models and docker"
+  log "Create prod/dev subvolumes for models and docker (idempotent)"
   sudo mkdir -p /opt/models-prod /opt/models-dev /var/lib/docker-prod /var/lib/docker-dev
   sudo btrfs subvolume create /opt/models-prod 2>/dev/null || true
   sudo btrfs subvolume create /opt/models-dev  2>/dev/null || true
@@ -651,12 +645,12 @@ EOF
 
   ensure_fstab_entry() {
     local subvol="$1" mountpoint="$2"
+    [ -z "${SNAP_UUID:-}" ] && return 0
     if ! grep -qE "^[^#].*\\s${mountpoint//\//\\/}\\s+btrfs\\s+.*subvol=@${subvol}\\b" /etc/fstab; then
       echo "UUID=${SNAP_UUID} ${mountpoint} btrfs subvol=@${subvol},defaults,noatime 0 0" | sudo tee -a /etc/fstab >/dev/null
     fi
     sudo mkdir -p "$mountpoint"
   }
-
   ensure_fstab_entry "models-prod"   "/opt/models-prod"
   ensure_fstab_entry "models-dev"    "/opt/models-dev"
   ensure_fstab_entry "docker-prod"   "/var/lib/docker-prod"
@@ -664,9 +658,9 @@ EOF
   sudo mount -a || true
   sudo systemctl start docker 2>/dev/null || true
 
-  # 7) Install dynamic pre/post pacman hooks + helper script
-  info "Installing dynamic pacman hooks and helper"
-  sudo tee /usr/local/libexec/omarchy-snapper-hook.sh >/dev/null <<'EOF'
+  log "Install helper in /usr/local/bin (captures yay/paru/pacman command)"
+  sudo install -d -m 0755 /usr/local/bin
+  sudo tee /usr/local/bin/omarchy-snapper-hook >/dev/null <<'EOS'
 #!/bin/sh
 set -eu
 PHASE="${1:-pre}"
@@ -674,15 +668,12 @@ PHASE="${1:-pre}"
 normalize_cmd() {
   printf '%s\n' "$1" | sed 's/[[:space:]]\{1,\}/ /g; s|.*/\(yay\|paru\|pacman\)|\1|'
 }
-
 find_invoker_cmd() {
-  pid="$PPID"
-  i=0
-  pacman_cmd=""
+  pid="$PPID"; i=0; pacman_cmd=""
   while [ "$pid" -gt 1 ] 2>/dev/null && [ $i -lt 20 ]; do
     raw="$(tr '\0' ' ' </proc/"$pid"/cmdline 2>/dev/null || true)"
     [ -z "$raw" ] && raw="$(cat /proc/"$pid"/comm 2>/dev/null || true)"
-    [ -n "$raw" ] || break
+    [ -z "$raw" ] && break
     base="$(printf '%s\n' "$raw" | awk '{print $1}' | sed 's|.*/||')"
     case "$base" in
       yay|paru) normalize_cmd "$raw"; return 0 ;;
@@ -694,16 +685,15 @@ find_invoker_cmd() {
   [ -n "$pacman_cmd" ] && { printf '%s\n' "$pacman_cmd"; exit 0; }
   printf '%s\n' "pacman transaction"
 }
-
 CMD="$(find_invoker_cmd)"
-# Optional: cap description to 200 chars
-# CMD="$(printf '%s' "$CMD" | cut -c1-200)"
+# Optional cap: CMD="$(printf '%s' "$CMD" | cut -c1-200)"
 exec /usr/bin/snapper --config root create --description "${PHASE} ${CMD}"
-EOF
-  sudo chmod 755 /usr/local/libexec/omarchy-snapper-hook.sh
+EOS
+  sudo chmod 755 /usr/local/bin/omarchy-snapper-hook
 
+  log "Write pacman hooks (pre/post) that call the helper"
   sudo mkdir -p /etc/pacman.d/hooks
-  sudo tee /etc/pacman.d/hooks/50-pre-btrfs-snapper.hook >/dev/null <<'EOF'
+  sudo tee /etc/pacman.d/hooks/50-pre-btrfs-snapper.hook >/dev/null <<'EOS'
 [Trigger]
 Operation = Install
 Operation = Upgrade
@@ -714,10 +704,10 @@ Target = *
 [Action]
 Description = Creating pre pacman snapshot...
 When = PreTransaction
-Exec = /usr/local/libexec/omarchy-snapper-hook.sh pre
-EOF
+Exec = /usr/local/bin/omarchy-snapper-hook pre
+EOS
 
-  sudo tee /etc/pacman.d/hooks/60-post-btrfs-snapper.hook >/dev/null <<'EOF'
+  sudo tee /etc/pacman.d/hooks/60-post-btrfs-snapper.hook >/dev/null <<'EOS'
 [Trigger]
 Operation = Install
 Operation = Upgrade
@@ -728,18 +718,24 @@ Target = *
 [Action]
 Description = Creating post pacman snapshot...
 When = PostTransaction
-Exec = /usr/local/libexec/omarchy-snapper-hook.sh post
-EOF
+Exec = /usr/local/bin/omarchy-snapper-hook post
+EOS
   sudo chmod 644 /etc/pacman.d/hooks/*-btrfs-snapper.hook
 
-  # 8) Verify
-  info "Verifying snapper config and taking a test snapshot"
-  sudo snapper list-configs | grep -q '^root' || { warn "snapper config missing"; return 1; }
+  log "Verification: assert helper + hooks exist"
+  for f in /usr/local/bin/omarchy-snapper-hook \
+           /etc/pacman.d/hooks/50-pre-btrfs-snapper.hook \
+           /etc/pacman.d/hooks/60-post-btrfs-snapper.hook; do
+    [ -f "$f" ] || { echo "[ERROR] missing $f" >&2; return 1; }
+  done
+
+  log "Kick timeline once and create a test snapshot"
   sudo systemctl start snapper-timeline.service || true
   sudo snapper -c root create --description "omarchy setup test" || true
-  sudo snapper -c root list | tail -n 5
+  sudo snapper list-configs || true
+  sudo snapper -c root list | tail -n 5 || true
 
-  info "Done: Snapper backups enabled. Pre/post pacman snapshots active. Dev data excluded."
+  log "Snapper system backups configured."
 }
 
 main() {
@@ -774,6 +770,8 @@ main() {
   install_omarchy_screensaver
   install_omarchy_splash_logo
   sync_kanagawa_background
+
+  setup_snapper_system_backups
   #set_plymouth_theme_bgrt
   info "All done."
 }
