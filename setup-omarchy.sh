@@ -536,6 +536,31 @@ install_omarchy_splash_logo() {
   fi
 }
 
+setup_tmux_tpm() {
+  local tpm_dir="${HOME}/.tmux/plugins/tpm"
+  local tmux_conf_src="${HOME}/repos/omarchy-setup/reference-files/.tmux.conf"
+  local tmux_conf_dest="${HOME}/.tmux.conf"
+
+  info "Setting up tmux and TPM..."
+
+  # Clone TPM only if it doesn’t already exist
+  if [ ! -d "${tpm_dir}/.git" ]; then
+    git clone https://github.com/tmux-plugins/tpm "${tpm_dir}"
+  else
+    (
+      cd "${tpm_dir}" && git pull --ff-only >/dev/null 2>&1
+    )
+  fi
+
+  # Copy tmux.conf if it differs
+  if ! cmp -s "${tmux_conf_src}" "${tmux_conf_dest}"; then
+    cp "${tmux_conf_src}" "${tmux_conf_dest}"
+    info "Updated ~/.tmux.conf from reference-files."
+  else
+    info "~/.tmux.conf is already up to date."
+  fi
+}
+
 main() {
   install_packages_from_list "$SCRIPT_DIR/packages.list"
   install_oh_my_zsh
@@ -555,6 +580,10 @@ main() {
   # To install more packages run: "sudo informant read --all"
   yay -S --needed --noconfirm informant
 
+  setup_tmux_tpm
+ #git  clone https://github.com/tmux-plugins/tpm ~/.tmux/plugins/tpm
+ # cp ${HOME}/repos/omarchy-setup/reference-files/.tmux.conf ~/.tmux.conf
+
   systemctl --user enable --now pipewire.service pipewire-pulse.service wireplumber.service
   systemctl --user enable --now sunshine.service
   sudo systemctl enable --now sshd.service
@@ -563,9 +592,9 @@ main() {
   set_looknfeel_gaps
   install_omarchy_screensaver
   install_omarchy_splash_logo
+  sync_kanagawa_background
   sudo mkinitcpio -P
   #set_plymouth_theme_bgrt
-  sync_kanagawa_background
   info "All done."
 }
 
