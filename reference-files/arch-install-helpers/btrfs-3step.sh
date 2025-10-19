@@ -1,23 +1,8 @@
 #!/usr/bin/env bash
 # btrfs-3step.sh
 # Partition -> Format -> Layout for Arch manual install with Btrfs.
-# Layout subvols: @, @home, @log, @cache, @snapshots
-#
-# Typical flow:
-#   sudo ./btrfs-3step.sh -s partition -d /dev/nvme0n1
-#   sudo ./btrfs-3step.sh -s format    -d /dev/nvme0n1 -e /dev/nvme0n1p1 -b /dev/nvme0n1p2
-#   sudo ./btrfs-3step.sh -s layout    -e /dev/nvme0n1p1 -b /dev/nvme0n1p2
-#
-# Partition plan (DESTROYS the disk):
-#   GPT
-#   p1: 1MiB -> 20GiB, type ESP (FAT32), flag esp on
-#   p2: 20GiB -> 100%, type primary, Btrfs
-#
-# Notes:
-# - If your kernel enumerates partitions as /dev/nvme0n1p1 etc, use those.
-# - EFI label defaults to BOOT. Btrfs label defaults to ARCH-BTRFS.
-# - Compression default zstd:3. Adjust with -C.
-#
+# Subvols: @, @home, @log, @cache, @snapshots
+
 set -euo pipefail
 
 # Defaults
@@ -33,49 +18,27 @@ EFI_PART=""        # e.g. /dev/nvme0n1p1
 BTRFS_PART=""      # e.g. /dev/nvme0n1p2
 
 usage() {
-  echo "Usage:"
-  echo "  $0 -s partition -d /dev/DISK                      # create 20GiB ESP + rest Btrfs"
-  echo "  $0 -s format    -d /dev/DISK -e /dev/ESP -b /dev/BTRFS"
-  echo "  $0 -s layout    -e /dev/ESP -b /dev/BTRFS [-C zstd:3] [-L ARCH-BTRFS] [-F]"
-  echo
-  echo "Options:"
-  echo "  -s  step: partition | format | layout"
-  echo "  -d  disk device, e.g. /dev/nvme0n1 (partition, format)"
-  echo "  -e  EFI partition, e.g. /dev/nvme0n1p1 (format, layout)"
-  echo "  -b  Btrfs partition, e.g. /dev/nvme0n1p2 (format, layout)"
-  echo "  -L  Btrfs label (default: ${BTRFS_LABEL})"
-  echo "  -E  EFI label (default: ${EFI_LABEL})"
-  echo "  -C  Btrfs compress option (default: ${COMPRESS_OPT})"
-  echo "  -F  force where applicable (ignore some safety checks)"
+  cat <<EOF
+Usage:
+  $0 -s partition -d /dev/DISK
+  $0 -s format    -d /dev/DISK -e /dev/ESP -b /dev/BTRFS
+  $0 -s layout    -e /dev/ESP -b /dev/BTRFS [-C zstd:3] [-L ARCH-BTRFS] [-F]
+
+Options:
+  -s  step: partition | format | layout
+  -d  disk device, e.g. /dev/nvme0n1 (partition, format)
+  -e  EFI partition, e.g. /dev/nvme0n1p1 (format, layout)
+  -b  Btrfs partition, e.g. /dev/nvme0n1p2 (format, layout)
+  -L  Btrfs label (default: ${BTRFS_LABEL})
+  -E  EFI label (default: ${EFI_LABEL})
+  -C  Btrfs compress option (default: ${COMPRESS_OPT})
+  -F  force where applicable (ignore some safety checks)
+EOF
   exit 1
 }
 
 req() { command -v "$1" >/dev/null 2>&1 || { echo "Missing command: $1"; exit 1; }; }
-
-while getopts ":s:d:e:b:L:E:C:F" opt; do
-  case "$opt" in
-    s) STEP="$OPTARG" ;;
-    d) DISK="$OPTARG" ;;
-    e) EFI_PART="$OPTARG" ;;
-    b) BTRFS_PART="$OPTARG" ;;
-    L) BTRFS_LABEL="$OPTARG" ;;
-    E) EFI_LABEL="$OPTARG" ;;
-    C) COMPRESS_OPT="$OPTARG" ;;
-    F) FORCE="yes" ;;
-    *) usage ;;
-  case_esac=true
-  esac
-done
-
-[[ -n "${case_esac:-}" ]] || true  # quiet shellcheck for case fallthrough
-
-[[ -z "$STEP" ]] && usage
-
-######################################################################
-# Helpers
-######################################################################
 die() { echo "Error: $*" >&2; exit 1; }
-
 is_block() { [[ -b "$1" ]]; }
 
 assert_disk_unused() {
@@ -111,13 +74,29 @@ make_dirs() {
   mkdir -p /mnt/{home,var/log,var/cache,.snapshots,boot}
 }
 
-######################################################################
+# Parse args
+while getopts ":s:d:e:b:L:E:C:F" opt; do
+  case "$opt" in
+    s) STEP="$OPTARG" ;;
+    d) DISK="$OPTARG" ;;
+    e) EFI_PART="$OPTARG" ;;
+    b) BTRFS_PART="$OPTARG" ;;
+    L) BTRFS_LABEL="$OPTARG" ;;
+    E) EFI_LABEL="$OPTARG" ;;
+    C) COMPRESS_OPT="$OPTARG" ;;
+    F) FORCE="yes" ;;
+    *) usage ;;
+  esac
+done
+
+[[ -n "$STEP" ]] || usage
+
+#####################################
 # Step: partition
-######################################################################
+#####################################
 do_partition() {
   req parted
   [[ -n "$DISK" ]] || die "-d /dev/DISK is required"
-
   is_block "$DISK" || die "$DISK is not a block device"
   assert_disk_unused "$DISK"
 
@@ -132,9 +111,9 @@ do_partition() {
   print_partitions "$DISK"
 }
 
-######################################################################
+#####################################
 # Step: format
-######################################################################
+#####################################
 do_format() {
   req mkfs.vfat
   req mkfs.btrfs
@@ -156,9 +135,9 @@ do_format() {
   print_partitions "$DISK"
 }
 
-######################################################################
+#####################################
 # Step: layout (subvols + mounts)
-######################################################################
+#####################################
 do_layout() {
   req blkid
   req btrfs
@@ -171,7 +150,6 @@ do_layout() {
   is_block "$EFI_PART" || die "$EFI_PART not a block device"
   is_block "$BTRFS_PART" || die "$BTRFS_PART not a block device"
 
-  # Safety around /mnt
   if mountpoint -q /mnt; then
     echo "/mnt is already mounted."
     [[ "$FORCE" == "yes" ]] || die "Unmount /mnt or use -F to proceed."
@@ -237,9 +215,7 @@ do_layout() {
   print_mounts
 }
 
-######################################################################
 # Dispatch
-######################################################################
 case "$STEP" in
   partition) do_partition ;;
   format)    do_format ;;
