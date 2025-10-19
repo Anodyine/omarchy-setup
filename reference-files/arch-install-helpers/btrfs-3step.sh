@@ -202,6 +202,8 @@ do_layout() {
   echo "Mounting subvol=@ to /mnt"
   mount -o "subvol=@,${mopts}" "$BTRFS_PART" /mnt
 
+  mkdir -p /mnt/{home,var/log,var/cache,.snapshots,boot}
+
   echo "Mounting subvols..."
   mount -o "subvol=@home,${mopts}"      "$BTRFS_PART" /mnt/home
   mount -o "subvol=@log,${mopts}"       "$BTRFS_PART" /mnt/var/log
