@@ -532,6 +532,7 @@ install_omarchy_splash_logo() {
       info "Backed up existing logo.png"
     fi
     sudo cp "$src" "$dest"
+    sudo plymouth-set-default-theme omarchy
     info "Installed new logo.png rebuilding initramfs"
     sudo mkinitcpio -P
     info "Installed new logo.png."
