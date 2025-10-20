@@ -745,6 +745,39 @@ EOS
   log "Snapper system backups configured."
 }
 
+update_ghostty_font_size() {
+  local config="$HOME/.config/ghostty/config"
+  local target_size=12
+
+  # Ensure config exists
+  if [[ ! -f "$config" ]]; then
+    echo "Error: Ghostty config not found at $config"
+    return 1
+  fi
+
+  # Check current value
+  local current_size
+  current_size=$(grep -E '^font-size[[:space:]]*=' "$config" | awk -F= '{print $2}' | xargs)
+
+  # If the size is already correct, do nothing
+  if [[ "$current_size" == "$target_size" ]]; then
+    echo "Font size already set to $target_size"
+    return 0
+  fi
+
+  # Make a backup before modifying
+  cp "$config" "${config}.bak.$(date +%Y%m%d%H%M%S)"
+
+  # Replace or append the font-size setting
+  if grep -qE '^font-size[[:space:]]*=' "$config"; then
+    sed -i "s/^font-size[[:space:]]*=.*/font-size = $target_size/" "$config"
+  else
+    echo "font-size = $target_size" >> "$config"
+  fi
+
+  echo "Updated Ghostty font size to $target_size"
+}
+
 
 main() {
   install_packages_from_list "$SCRIPT_DIR/packages.list"
@@ -778,7 +811,7 @@ main() {
   install_omarchy_screensaver
   install_omarchy_splash_logo
   sync_kanagawa_background
-
+  update_ghostty_font_size
   setup_snapper_system_backups
   #set_plymouth_theme_bgrt
   info "All done."
