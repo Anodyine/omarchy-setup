@@ -419,7 +419,7 @@ ensure_no_hardware_cursor() {
 
 sync_background() {
   local THEME="ristretto"
-  local SRC="$HOME/repos/omarchy-setup/reference-files/wallpapers/Fantasy-Landscape3.png"
+  local SRC="$HOME/repos/omarchy-setup/reference-files/wallpapers/noOtRd05.png"
   local DEST_DIR="$HOME/.config/omarchy/themes/$THEME/backgrounds"
   local TARGET_BASENAME
   local TARGET
@@ -796,8 +796,8 @@ main() {
   # To install more packages run: "sudo informant read --all"
   yay -S --needed --noconfirm informant
 
-  setup_tmux_tpm
-  systemctl --user enable --now pipewire.service pipewire-pulse.service wireplumber.service
+  #setup_tmux_tpm
+  #systemctl --user enable --now pipewire.service pipewire-pulse.service wireplumber.service
   systemctl --user enable --now sunshine.service
   sudo systemctl enable --now sshd.service
   ensure_no_hardware_cursor
@@ -806,9 +806,9 @@ main() {
   install_omarchy_screensaver
   install_omarchy_splash_logo
   sync_background
-  update_ghostty_font_size
-  setup_snapper_system_backups
-  add_hyprland_workspace_gesture
+  #update_ghostty_font_size
+  #setup_snapper_system_backups
+  #add_hyprland_workspace_gesture
   info "All done."
 }
 
