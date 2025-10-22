@@ -757,6 +757,25 @@ update_ghostty_font_size() {
   echo "Updated Ghostty font size to $target_size"
 }
 
+# add_hyprland_workspace_gesture() {
+#   local config="${HOME}/.config/hypr/hyprland.conf"
+#   local gesture_line='gesture = 3, horizontal, workspace'
+
+#   # Ensure config file exists
+#   if [[ ! -f "$config" ]]; then
+#     mkdir -p "$(dirname "$config")"
+#     touch "$config"
+#   fi
+
+#   # Check if line already exists (ignores leading/trailing spaces)
+#   if ! grep -qE "^[[:space:]]*${gesture_line//\*/\\*}[[:space:]]*$" "$config"; then
+#     echo "$gesture_line" >> "$config"
+#     echo "[INFO] Added workspace gesture to $config"
+#   else
+#     echo "[OK] Gesture already present in $config"
+#   fi
+# }
+
 
 main() {
   install_packages_from_list "$SCRIPT_DIR/packages.list"
@@ -778,9 +797,6 @@ main() {
   yay -S --needed --noconfirm informant
 
   setup_tmux_tpm
- #git  clone https://github.com/tmux-plugins/tpm ~/.tmux/plugins/tpm
- # cp ${HOME}/repos/omarchy-setup/reference-files/.tmux.conf ~/.tmux.conf
-
   systemctl --user enable --now pipewire.service pipewire-pulse.service wireplumber.service
   systemctl --user enable --now sunshine.service
   sudo systemctl enable --now sshd.service
@@ -792,7 +808,7 @@ main() {
   sync_background
   update_ghostty_font_size
   setup_snapper_system_backups
-  #set_plymouth_theme_bgrt
+  add_hyprland_workspace_gesture
   info "All done."
 }
 
